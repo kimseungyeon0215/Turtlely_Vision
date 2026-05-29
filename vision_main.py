@@ -68,9 +68,9 @@ class MonthlyMeasurement(Base):
 
     # DB 엔티티 구조를 맞추기 위해 컬럼은 남겨둠
     # API 요청에서는 받지 않고, 저장 시에도 넣지 않으므로 NULL로 들어감
-    hw_accel_x = Column(Float, nullable=True)
-    hw_accel_y = Column(Float, nullable=True)
-    hw_accel_z = Column(Float, nullable=True)
+    hw_accelx = Column(Float, nullable=True)
+    hw_accely = Column(Float, nullable=True)
+    hw_accelz = Column(Float, nullable=True)
     calibration_c = Column(Float, nullable=True)
 
 
@@ -334,7 +334,12 @@ async def analyze_posture(data: AnalyzeRequest, db: Session = Depends(get_db)):
             posture_type=status,
             measured_at=get_kst_now(),
             score=calculated_score,
-            prediction_data=msg
+            prediction_data=msg,
+            predicted_diseases=None,
+            hw_accelx=None,
+            hw_accely=None,
+            hw_accelz=None,
+            calibration_c=None
         )
 
         db.add(new_report)
