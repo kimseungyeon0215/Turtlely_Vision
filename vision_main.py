@@ -52,26 +52,26 @@ class MonthlyMeasurement(Base):
     __tablename__ = "monthly_measurement"
 
     monthly_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
-    member_id = Column(BigInteger, ForeignKey("member.member_id"), nullable=False)
+    member_id = Column(BigInteger, ForeignKey("member.member_id"), nullable=True)
+
+    # ✅ 실제 DB의 NOT NULL 조건 반영 및 JPA 컬럼 싱크 결합
+    created_at = Column(DateTime, nullable=False, default=get_kst_now)
+    updated_at = Column(DateTime, nullable=False, default=get_kst_now, onupdate=get_kst_now)
 
     cva_angle = Column(Float, nullable=False)
     cra_angle = Column(Float, nullable=False)
-    posture_type = Column(String(255), nullable=False)
-    measured_at = Column(DateTime, nullable=False, default=get_kst_now)
+    posture_type = Column(String(255), nullable=True) # 실제 DB의 NULL 허용 상태 반영
+    measured_at = Column(DateTime, nullable=True, default=get_kst_now) # 실제 DB의 NULL 허용 상태 반영
     score = Column(Integer, nullable=False)
 
-    # DB 엔티티 구조를 맞추기 위해 컬럼은 남겨둠
-    # 지금 기능에서는 값을 저장하지 않으므로 NULL로 들어감
     predicted_diseases = Column(Text, nullable=True)
-
     prediction_data = Column(Text, nullable=True)
 
-    # DB 엔티티 구조를 맞추기 위해 컬럼은 남겨둠
-    # API 요청에서는 받지 않고, 저장 시에도 넣지 않으므로 NULL로 들어감
+    # ✅ 실제 DB 컬럼명에 완벽 동기화 (언더바 완전 제거 버전)
+    calibrationc = Column(Float, nullable=True)
     hw_accelx = Column(Float, nullable=True)
     hw_accely = Column(Float, nullable=True)
     hw_accelz = Column(Float, nullable=True)
-    calibrationc = Column(Float, nullable=True)
 
 
 class Notification(Base):
@@ -180,7 +180,7 @@ def check_30day_remeasure():
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 실제 MySQL에서 Spring Boot/JPA가 테이블을 관리한다면 주석 처리 권장 -> 주석처리함(멎나?)
+    # 실제 MySQL에서 Spring Boot/JPA가 테이블을 관리하므로 주석 처리 유지
     # Base.metadata.create_all(bind=engine)
 
     scheduler = BackgroundScheduler(timezone="Asia/Seoul")
@@ -327,19 +327,24 @@ async def analyze_posture(data: AnalyzeRequest, db: Session = Depends(get_db)):
             calculated_score = 40
             msg = "경추 정렬이 반대로 변형된 위험한 상태입니다. 전문적인 교정과 진단을 권장합니다."
 
+        now_time = get_kst_now()
+
+        # ✅ 저장할 데이터 인스턴스 구축 (created_at, updated_at 명시적 추가)
         new_report = MonthlyMeasurement(
             member_id=member.member_id,
+            created_at=now_time,
+            updated_at=now_time,
             cva_angle=round(cva_angle, 2),
             cra_angle=round(cra_angle, 2),
             posture_type=status,
-            measured_at=get_kst_now(),
+            measured_at=now_time,
             score=calculated_score,
             prediction_data=msg,
             predicted_diseases=None,
+            calibrationc=None,
             hw_accelx=None,
             hw_accely=None,
-            hw_accelz=None,
-            calibrationc=None
+            hw_accelz=None
         )
 
         db.add(new_report)
