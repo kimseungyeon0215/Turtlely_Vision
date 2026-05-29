@@ -71,7 +71,7 @@ class MonthlyMeasurement(Base):
     hw_accelx = Column(Float, nullable=True)
     hw_accely = Column(Float, nullable=True)
     hw_accelz = Column(Float, nullable=True)
-    calibration_c = Column(Float, nullable=True)
+    calibrationc = Column(Float, nullable=True)
 
 
 class Notification(Base):
@@ -339,7 +339,7 @@ async def analyze_posture(data: AnalyzeRequest, db: Session = Depends(get_db)):
             hw_accelx=None,
             hw_accely=None,
             hw_accelz=None,
-            calibration_c=None
+            calibrationc=None
         )
 
         db.add(new_report)
