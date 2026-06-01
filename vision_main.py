@@ -28,7 +28,7 @@ def get_kst_now():
 
 
 # 데이터베이스 설정
-DATABASE_URL = "mysql+pymysql://root:0215@localhost:3306/turtlely_db"
+DATABASE_URL = "mysql+pymysql://root:0215@localhost:3306/turtlely_db?charset=utf8mb4"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -54,20 +54,17 @@ class MonthlyMeasurement(Base):
     monthly_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
     member_id = Column(BigInteger, ForeignKey("member.member_id"), nullable=True)
 
-    # ✅ 실제 DB의 NOT NULL 조건 반영 및 JPA 컬럼 싱크 결합
     created_at = Column(DateTime, nullable=False, default=get_kst_now)
     updated_at = Column(DateTime, nullable=False, default=get_kst_now, onupdate=get_kst_now)
 
     cva_angle = Column(Float, nullable=False)
     cra_angle = Column(Float, nullable=False)
-    posture_type = Column(String(255), nullable=True) # 실제 DB의 NULL 허용 상태 반영
-    measured_at = Column(DateTime, nullable=True, default=get_kst_now) # 실제 DB의 NULL 허용 상태 반영
+    posture_type = Column(String(255), nullable=True) 
+    measured_at = Column(DateTime, nullable=True, default=get_kst_now) 
     score = Column(Integer, nullable=False)
 
     predicted_diseases = Column(Text, nullable=True)
     prediction_data = Column(Text, nullable=True)
-
-    # ✅ 실제 DB 컬럼명에 완벽 동기화 (언더바 완전 제거 버전)
     calibrationc = Column(Float, nullable=True)
     hw_accelx = Column(Float, nullable=True)
     hw_accely = Column(Float, nullable=True)
@@ -329,7 +326,6 @@ async def analyze_posture(data: AnalyzeRequest, db: Session = Depends(get_db)):
 
         now_time = get_kst_now()
 
-        # ✅ 저장할 데이터 인스턴스 구축 (created_at, updated_at 명시적 추가)
         new_report = MonthlyMeasurement(
             member_id=member.member_id,
             created_at=now_time,
