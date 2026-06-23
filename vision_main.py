@@ -20,11 +20,11 @@ def get_kst_now():
 
 DATABASE_URL = "mysql+pymysql://root:0215@127.0.0.1:3306/turtlely_db?charset=utf8mb4"
 
-# ⭕ [수정] MySQL 엔진 내부의 일시적인 메타데이터 캐싱 및 sql_mode 제약을 완화하는 옵션 주입
+# ⭕ MySQL 엔진 내부의 일시적인 메타데이터 캐싱 및 sql_mode 제약을 완화하는 옵션 주입
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,      # 매 요청마다 연결 상태 및 최신 스펙 확인
-    pool_recycle=1800,       # 커넥션 자동 갱신 (좀비 세션 방지)
+    pool_pre_ping=True,       # 매 요청마다 연결 상태 및 최신 스펙 확인
+    pool_recycle=1800,        # 커넥션 자동 갱신 (좀비 세션 방지)
     connect_args={"init_command": "SET SESSION sql_mode='STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION'"}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -72,7 +72,7 @@ class Notification(Base):
     member_id = Column(BigInteger, ForeignKey("member.member_id"), nullable=False)
     type = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
-    status = Column(String(255), nullable=False)  # ⭕ VARCHAR(255) 매핑 유지
+    status = Column(String(255), nullable=False)  
     sent_at = Column(DateTime, nullable=True)
     read_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
@@ -132,6 +132,21 @@ class NotificationReportResponse(BaseModel):
     data: NotificationData
 
 
+# ⭕ [추가] 월간 그래프 응답용 Pydantic 모델 명세 (세은님 노션 전송 규격 일치)
+class GraphElement(BaseModel):
+    month: str
+    cvaAngle: float
+    craAngle: float
+
+
+class GraphReportResponse(BaseModel):
+    status: int
+    message: str
+    dataStatus: str
+    nickname: str
+    graphData: List[GraphElement]
+
+
 def check_30day_remeasure():
     db: Session = SessionLocal()
     try:
@@ -180,7 +195,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
@@ -531,5 +546,86 @@ def apply_report_notification(req: NotificationReportRequest, db: Session = Depe
             content={
                 "errorCode": "SERVER_INTERNAL_ERROR",
                 "message": str(e)
+            }
+        )
+
+
+@app.get("/report/graph", response_model=GraphReportResponse)
+def get_monthly_graph_data(nickname: str, db: Session = Depends(get_db)):
+    try:
+        member = db.query(Member).filter(Member.nickname == nickname.strip()).first()
+        if not member:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "errorCode": "MEMBER_NOT_FOUND",
+                    "message": "요청된 닉네임에 해당하는 사용자가 DB(member 테이블)에 존재하지 않습니다."
+                }
+            )
+
+        target_member_id = int(member.member_id)
+
+        all_measurements = db.query(MonthlyMeasurement).filter(
+            MonthlyMeasurement.member_id == target_member_id,
+            MonthlyMeasurement.posture_type != "분석 중",
+            MonthlyMeasurement.posture_type.isnot(None),
+            MonthlyMeasurement.cva_angle.isnot(None),
+            MonthlyMeasurement.cra_angle.isnot(None),
+            MonthlyMeasurement.measured_at.isnot(None)
+        ).order_by(MonthlyMeasurement.measured_at.asc()).all()
+
+        if not all_measurements:
+            return {
+                "status": 200,
+                "message": "측정된 그래프 기록이 존재하지 않습니다.",
+                "dataStatus": "EMPTY",
+                "nickname": member.nickname,
+                "graphData": []
+            }
+
+        monthly_map = {}
+        for row in all_measurements:
+            month_key = f"{row.measured_at.year}-{row.measured_at.month}"
+            
+            monthly_map[month_key] = {
+                "month_label": f"{row.measured_at.month}월",
+                "cvaAngle": row.cva_angle,
+                "craAngle": row.cra_angle,
+                "raw_date": row.measured_at  
+            }
+
+        sorted_graph_data = sorted(monthly_map.values(), key=lambda x: x["raw_date"])
+
+        final_graph_list = [
+            GraphElement(
+                month=item["month_label"],
+                cvaAngle=item["cvaAngle"],
+                craAngle=item["craAngle"]
+            )
+            for item in sorted_graph_data
+        ]
+
+        return {
+            "status": 200,
+            "message": "월간 각도 변화 그래프 데이터 조회가 완료되었습니다.",
+            "dataStatus": "AVAILABLE",
+            "nickname": member.nickname,
+            "graphData": final_graph_list
+        }
+
+    except SQLAlchemyError as db_err:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "errorCode": "DATABASE_ERROR",
+                "message": f"데이터베이스 연결 및 그래프 쿼리 수행 도중 오류 발생: {str(db_err)}"
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "errorCode": "SERVER_INTERNAL_ERROR",
+                "message": f"서버 내부 데이터 연산 실패: {str(e)}"
             }
         )
