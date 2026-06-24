@@ -20,7 +20,7 @@ def get_kst_now():
 
 DATABASE_URL = "mysql+pymysql://root:0215@127.0.0.1:3306/turtlely_db?charset=utf8mb4"
 
-# ⭕ MySQL 엔진 내부의 일시적인 메타데이터 캐싱 및 sql_mode 제약을 완화하는 옵션 주입
+# MySQL 엔진 내부의 일시적인 메타데이터 캐싱 및 sql_mode 제약을 완화하는 옵션 주입
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,       # 매 요청마다 연결 상태 및 최신 스펙 확인
@@ -34,13 +34,16 @@ Base = declarative_base()
 class Member(Base):
     __tablename__ = "member"
 
-    member_id = Column(BigInteger, primary_key=True, index=True)
-    login_id = Column(String(50), nullable=True)
+    member_id = Column("member_id", BigInteger, primary_key=True, index=True, autoincrement=True)
+    login_id = Column("login_id", String(50), nullable=True)
     password = Column(String(255), nullable=True)
-    nickname = Column(String(50), nullable=True)
-    social_type = Column(String(255), nullable=True)
-    phone_number = Column(String(255), nullable=True)
-    social_id = Column(String(255), nullable=True)
+    nickname = Column(String(50), nullable=True)  
+    
+    social_type = Column("social_type", String(255), nullable=True)
+    
+    phone_number = Column("phone_number", String(255), nullable=True)
+    social_id = Column("social_id", String(255), nullable=True)
+    
     role = Column(String(255), nullable=True)
 
 
@@ -118,7 +121,7 @@ class MonthlyReportResponse(BaseModel):
 
 
 class NotificationReportRequest(BaseModel):
-    nickname: str
+    member_id: int
 
 
 class NotificationData(BaseModel):
@@ -132,7 +135,6 @@ class NotificationReportResponse(BaseModel):
     data: NotificationData
 
 
-# ⭕ [추가] 월간 그래프 응답용 Pydantic 모델 명세 (세은님 노션 전송 규격 일치)
 class GraphElement(BaseModel):
     month: str
     cvaAngle: float
@@ -195,8 +197,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Base.metadata.create_all(bind=engine)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -212,7 +212,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={
             "errorCode": "INVALID_INPUT_TYPE",
-            "message": "year 나 month 파라미터에 숫자가 아닌 잘못된 타입의 값이 전달되었습니다."
+            "message": "파라미터에 잘못된 타입의 값이 전달되었습니다."
         }
     )
 
@@ -364,7 +364,7 @@ async def analyze_posture(data: AnalyzeRequest, db: Session = Depends(get_db)):
 
 
 @app.get("/report/monthly", response_model=MonthlyReportResponse)
-def get_monthly_report(nickname: str, year: int, month: int, db: Session = Depends(get_db)):
+def get_monthly_report(member_id: int, year: int, month: int, db: Session = Depends(get_db)):
     try:
         kst_now = get_kst_now()
 
@@ -376,8 +376,7 @@ def get_monthly_report(nickname: str, year: int, month: int, db: Session = Depen
                     "message": "유효하지 않은 날짜 범위입니다."
                 }
             )
-
-        member = db.query(Member).filter(Member.nickname == nickname).first()
+        member = db.query(Member).filter(Member.member_id == member_id).first()
         if not member:
             return JSONResponse(
                 status_code=404,
@@ -490,15 +489,13 @@ def get_monthly_report(nickname: str, year: int, month: int, db: Session = Depen
 @app.post("/notification/report", response_model=NotificationReportResponse)
 def apply_report_notification(req: NotificationReportRequest, db: Session = Depends(get_db)):
     try:
-        clean_nickname = req.nickname.strip()
-        member = db.query(Member).filter(Member.nickname == clean_nickname).first()
-        
+        member = db.query(Member).filter(Member.member_id == req.member_id).first()
         if not member:
             return JSONResponse(
                 status_code=404,
                 content={
                     "errorCode": "MEMBER_NOT_FOUND",
-                    "message": f"요청된 닉네임 '{clean_nickname}'에 해당하는 사용자가 DB(member 테이블)에 존재하지 않습니다."
+                    "message": f"요청된 member_id '{req.member_id}'에 해당하는 사용자가 존재하지 않습니다."
                 }
             )
 
@@ -551,15 +548,15 @@ def apply_report_notification(req: NotificationReportRequest, db: Session = Depe
 
 
 @app.get("/report/graph", response_model=GraphReportResponse)
-def get_monthly_graph_data(nickname: str, db: Session = Depends(get_db)):
+def get_monthly_graph_data(member_id: int, db: Session = Depends(get_db)):
     try:
-        member = db.query(Member).filter(Member.nickname == nickname.strip()).first()
+        member = db.query(Member).filter(Member.member_id == member_id).first()
         if not member:
             return JSONResponse(
                 status_code=404,
                 content={
                     "errorCode": "MEMBER_NOT_FOUND",
-                    "message": "요청된 닉네임에 해당하는 사용자가 DB(member 테이블)에 존재하지 않습니다."
+                    "message": "요청된 member_id에 해당하는 사용자가 존재하지 않습니다."
                 }
             )
 
